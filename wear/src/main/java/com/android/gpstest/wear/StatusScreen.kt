@@ -1,14 +1,10 @@
 package com.android.gpstest.wear
 
-import android.Manifest
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.icu.text.SimpleDateFormat
 import android.location.Location
-import android.location.LocationManager
-import android.location.OnNmeaMessageListener
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
@@ -28,7 +24,6 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -39,10 +34,6 @@ import androidx.compose.ui.input.rotary.onRotaryScrollEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat.getSystemService
-import androidx.core.content.ContextCompat.startActivity
-import androidx.core.content.FileProvider
 import androidx.wear.compose.material.AutoCenteringParams
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
@@ -64,12 +55,8 @@ import com.android.gpstest.library.util.FormatUtils
 import com.android.gpstest.wear.theme.GpstestTheme
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
-import java.io.File
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.Executor
-import java.util.concurrent.Executors
-import kotlin.time.Duration
 
 
 /**
@@ -182,7 +169,6 @@ fun StatusScreen(signalInfoViewModel: SignalInfoViewModel) {
 @Composable
 fun startStopButton(showDetails: MutableState<Boolean>) {
 
-
     val context = LocalContext.current // Access the context here for later use
     val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
     var buttonText = remember { mutableStateOf(if (GlobalStuff.recordingStarted) "Stop" else "Start") }
@@ -194,7 +180,6 @@ fun startStopButton(showDetails: MutableState<Boolean>) {
 
                     showDetails.value = !showDetails.value
                     if(GlobalStuff.recordingStarted){
-                        //shareFile(context)
                         var toast = Toast.makeText(context, "Logfile saved: " + GlobalStuff.recordingTimestamp, Toast.LENGTH_SHORT)
                         toast.show()
                         GlobalStuff.recordingTimestamp = "noTimestamp"
@@ -217,10 +202,6 @@ fun startStopButton(showDetails: MutableState<Boolean>) {
     }
 }
 
-fun readFileContent(file: File): String {
-    return file.bufferedReader().use { it.readText() }
-}
-
 fun logAppsThatCanHandleTextPlain(context: Context) {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
@@ -234,47 +215,6 @@ fun logAppsThatCanHandleTextPlain(context: Context) {
         }
     } else {
         Log.d("AppCapable", "No apps found that can handle text/plain intents.")
-    }
-}
-
-
-fun shareFile(context: Context) {
-    val file = File(context.filesDir, "nmea_recording.txt")
-    logAppsThatCanHandleTextPlain(context)
-
-    if (!file.exists()) {
-        Toast.makeText(context, "Log file does not exist", Toast.LENGTH_SHORT).show()
-        //Log.e("Eneko", "The file doesn't exist")
-        Toast.makeText(context, "The file doesn't exist", Toast.LENGTH_SHORT).show()
-        return
-    }else{
-        /*
-        // Read the content of the file
-        val content = file.readText()
-
-        // Log the content
-        Log.d("FileContent", content)
-
-        // Or log it line by line
-        file.forEachLine { line ->
-            Log.d("FileContentLine", line)
-        }
-        */
-    }
-
-
-    val uri = FileProvider.getUriForFile(context, "com.android.gpstest.wear.fileprovider", file)
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "Status Log")
-        putExtra(Intent.EXTRA_STREAM, uri)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    }
-
-    if (intent.resolveActivity(context.packageManager) != null) {
-        context.startActivity(Intent.createChooser(intent, "Send log via Gmail"))
-    } else {
-        Toast.makeText(context, "No app available to send the log file", Toast.LENGTH_SHORT).show()
     }
 }
 

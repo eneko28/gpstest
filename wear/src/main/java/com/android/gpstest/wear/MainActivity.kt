@@ -110,16 +110,11 @@ class MainActivity : ComponentActivity() {
         instance = this
 
         setKeepScreenOn(this, true) // Keep screen on
+
         // Observe stopping location updates from the service
         prefs.registerOnSharedPreferenceChangeListener(stopTrackingListener)
-        /*
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,
-                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1001)
-        }
-        */
-        startBatteryLogging();
+
+        startBatteryLogging()
         if (!userDeniedPermission) {
             requestPermissionAndStartGps(this)
         } else {
@@ -133,8 +128,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         instance = null
-        batteryLoggingJob?.cancel();
-        prefs.unregisterOnSharedPreferenceChangeListener(stopTrackingListener);
+        batteryLoggingJob?.cancel()
+        prefs.unregisterOnSharedPreferenceChangeListener(stopTrackingListener)
         super.onDestroy()
     }
 
@@ -144,7 +139,7 @@ class MainActivity : ComponentActivity() {
                 arrayOf(ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION)
             )
         ) {
-            gpsStart()
+            // Nothing to do here
         } else {
             // Request permissions from the user
             ActivityCompat.requestPermissions(
@@ -162,43 +157,10 @@ class MainActivity : ComponentActivity() {
         if (requestCode == PermissionUtils.LOCATION_PERMISSION_REQUEST) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 userDeniedPermission = false
-                gpsStart()
             } else {
                 userDeniedPermission = true
             }
         }
-    }
-
-    @ExperimentalCoroutinesApi
-    @SuppressLint("MissingPermission")
-    @Synchronized
-    private fun gpsStart() {
-        /*
-        PreferenceUtils.saveTrackingStarted(true, prefs)
-
-        // Observe flows
-        observeLocationFlow()
-        */
-
-        /*
-        // Add NMEA listener
-        val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager?
-
-        val nmeaListener: OnNmeaMessageListener =
-            OnNmeaMessageListener { nmea, timestamp ->
-                // You can add code here to save the NMEA message to a file or process it as needed
-                if (GlobalStuff.recordingStarted){
-                    // This is where you receive each NMEA sentence
-                    //Log.d("NMEA", nmea!!)
-                    logToFile(this@MainActivity, "nmea_recording", nmea)
-                }else{
-                    //Log.d("INFO", "Recording non started yet")
-                }
-            }
-
-        val executor: Executor = Executors.newSingleThreadExecutor()
-        locationManager?.addNmeaListener(executor, nmeaListener)
-         */
     }
 
     @SuppressLint("MissingPermission")
@@ -259,11 +221,6 @@ class MainActivity : ComponentActivity() {
 
     @Synchronized
     private fun gpsStop() {
-        /*
-        PreferenceUtils.saveTrackingStarted(false, prefs)
-        locationFlow?.cancel()
-         */
-
         stopGnssRecording()
     }
 
@@ -505,41 +462,19 @@ fun AEU(satelliteStatus: SatelliteStatus, modifier: Modifier) {
     flags[2] = if (satelliteStatus.usedInFix) 'U' else ' '
     StatusValue(String(flags), modifier)
 }
-/*
-fun logToFile(context: Context, fileName: String, data: String) {
-    try {
-        val file = File(context.filesDir, fileName)
-        FileWriter(file, true).use { writer ->
-            writer.appendLine(data)
-        }
-    } catch (e: IOException) {
-        e.printStackTrace()
-    }
-}
-*/
+
 fun logToFile(context: MainActivity, fileName: String, data: String) {
     val file: File
 
     try {
-        //val directory = "/storage/emulated/0/"
-        //val storageDir = File(context.getExternalFilesDir(null), "MyAppLogs")
-        //val storageDir = File(directory, "MyAppLogs")
         val storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         if(GlobalStuff.recordingTimestamp != "noTimestamp") {
             file = File(storageDir, fileName + "_" + GlobalStuff.recordingTimestamp + ".txt")
         }else{
             file = File(storageDir, fileName + "_" + GlobalStuff.appOpeningTimestamp + ".txt")
         }
-        //Log.d("Eneko", "Storage directory: ${storageDir.absolutePath}")
-        /*
-        if (!storageDir.exists()) {
-            if (storageDir.mkdirs()) {
-                Log.d("Eneko", "Directory created")
-            } else {
-                Log.e("Eneko", "Failed to create directory")
-                return
-            }
-        }*/
+        //Log.d("LOG", "Storage directory: ${storageDir.absolutePath}")
+
 
         // Create the directory if it doesn't exist
         if (!file.parentFile.exists()) {
@@ -551,9 +486,6 @@ fun logToFile(context: MainActivity, fileName: String, data: String) {
         }else{
             //Log.e("LOG", "Directory exists")
         }
-
-        //val file = File(storageDir, fileName)
-        //Log.d("LOG", "File path: ${file.absolutePath}")
 
         FileWriter(file, true).use { writer ->
             writer.appendLine(data)

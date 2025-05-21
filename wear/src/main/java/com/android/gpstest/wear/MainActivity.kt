@@ -4,21 +4,25 @@ import android.Manifest.permission.ACCESS_COARSE_LOCATION
 import android.Manifest.permission.ACCESS_FINE_LOCATION
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.icu.text.SimpleDateFormat
+import android.location.LocationManager
+import android.location.OnNmeaMessageListener
 import android.os.Bundle
+import android.os.Environment
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,7 +40,6 @@ import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.wear.compose.material.*
 import com.android.gpstest.Application.Companion.prefs
-import com.android.gpstest.library.data.FixState
 import com.android.gpstest.library.data.LocationRepository
 import com.android.gpstest.library.model.*
 import com.android.gpstest.library.ui.SignalInfoViewModel
@@ -46,7 +49,29 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import java.io.IOException
 import javax.inject.Inject
+import java.io.File
+import java.io.FileWriter
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import android.os.BatteryManager
+import kotlinx.coroutines.*
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Date
+import java.util.Locale
+
+object GlobalStuff {
+    var recordingStarted: Boolean = false
+    var recordingTimestamp: String = "noTimestamp"
+    var appOpeningTimestamp: String =run {
+        val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+        dateFormat.format(Date())
+    }
+}
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -66,13 +91,35 @@ class MainActivity : ComponentActivity() {
     private val stopTrackingListener: SharedPreferences.OnSharedPreferenceChangeListener =
         PreferenceUtil.newStopTrackingListener({ gpsStop() }, prefs)
 
+    private var locationManager: LocationManager? = null
+    private var nmeaListener: OnNmeaMessageListener? = null
+    private var nmeaExecutor: Executor? = null
+
+    companion object {
+        private var instance: MainActivity? = null
+        private const val TAG = "MainActivity"
+
+        fun setRecordingState(isRecording: Boolean) {
+            instance?.handleRecordingState(isRecording)
+        }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        instance = this
 
+        setKeepScreenOn(this, true) // Keep screen on
         // Observe stopping location updates from the service
         prefs.registerOnSharedPreferenceChangeListener(stopTrackingListener)
-
+        /*
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 1001)
+        }
+        */
+        startBatteryLogging();
         if (!userDeniedPermission) {
             requestPermissionAndStartGps(this)
         } else {
@@ -82,6 +129,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             StatusScreen(signalInfoViewModel)
         }
+    }
+
+    override fun onDestroy() {
+        instance = null
+        batteryLoggingJob?.cancel();
+        prefs.unregisterOnSharedPreferenceChangeListener(stopTrackingListener);
+        super.onDestroy()
     }
 
     private fun requestPermissionAndStartGps(activity: Activity) {
@@ -119,10 +173,71 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("MissingPermission")
     @Synchronized
     private fun gpsStart() {
+        /*
         PreferenceUtils.saveTrackingStarted(true, prefs)
 
         // Observe flows
         observeLocationFlow()
+        */
+
+        /*
+        // Add NMEA listener
+        val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager?
+
+        val nmeaListener: OnNmeaMessageListener =
+            OnNmeaMessageListener { nmea, timestamp ->
+                // You can add code here to save the NMEA message to a file or process it as needed
+                if (GlobalStuff.recordingStarted){
+                    // This is where you receive each NMEA sentence
+                    //Log.d("NMEA", nmea!!)
+                    logToFile(this@MainActivity, "nmea_recording", nmea)
+                }else{
+                    //Log.d("INFO", "Recording non started yet")
+                }
+            }
+
+        val executor: Executor = Executors.newSingleThreadExecutor()
+        locationManager?.addNmeaListener(executor, nmeaListener)
+         */
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startGnssRecording() {
+        if (!GlobalStuff.recordingStarted) return
+
+        PreferenceUtils.saveTrackingStarted(true, prefs)
+        observeLocationFlow() // GPS is started here:  it directly requests location updates from the GPS provider, which turns on the GNSS hardware
+
+        locationManager = getSystemService(LOCATION_SERVICE) as LocationManager?
+        nmeaListener = OnNmeaMessageListener { nmea, timestamp ->
+            if (GlobalStuff.recordingStarted) {
+                logToFile(this@MainActivity, "nmea_recording", nmea)
+            }
+        }
+        nmeaExecutor = Executors.newSingleThreadExecutor()
+        locationManager?.addNmeaListener(nmeaExecutor!!, nmeaListener!!)
+    }
+
+    private fun stopGnssRecording() {
+        PreferenceUtils.saveTrackingStarted(false, prefs)
+        locationFlow?.cancel() // Cancel location flow observation
+
+        nmeaListener?.let { listener ->
+            locationManager?.removeNmeaListener(listener)
+        }
+        locationManager = null
+        nmeaListener = null
+        nmeaExecutor = null
+    }
+
+    // Add function to handle recording state changes
+    fun handleRecordingState(isRecording: Boolean) {
+        GlobalStuff.recordingStarted = isRecording
+        if (isRecording) {
+            startGnssRecording()
+        } else {
+            stopGnssRecording()
+        }
     }
 
     @ExperimentalCoroutinesApi
@@ -144,12 +259,42 @@ class MainActivity : ComponentActivity() {
 
     @Synchronized
     private fun gpsStop() {
+        /*
         PreferenceUtils.saveTrackingStarted(false, prefs)
         locationFlow?.cancel()
+         */
+
+        stopGnssRecording()
     }
 
-    companion object {
-        private const val TAG = "MainActivity"
+
+    // ABOUT BATTERY
+    var batteryLoggingJob: Job? = null
+
+    fun getBatteryData(): BatteryData {
+        val batteryManager = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        return BatteryData(
+            timestamp = System.currentTimeMillis(),
+            batteryLevel = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY),
+            batteryCurrentNow = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW),
+            batteryCurrentAvg = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE),
+            isCharging = batteryManager.isCharging
+        )
+    }
+
+    fun startBatteryLogging() {
+        batteryLoggingJob = CoroutineScope(Dispatchers.Default).launch {
+            while (isActive /*&& GlobalStuff.recordingStarted*/) {
+                val batteryData = getBatteryData()
+
+                val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                val formattedTimestamp = LocalDateTime.ofInstant(Instant.ofEpochMilli(batteryData.timestamp), ZoneId.systemDefault() ).format(formatter)
+
+                val logEntry = "${formattedTimestamp},${batteryData.batteryLevel}%,${batteryData.batteryCurrentNow/1000}mA,${batteryData.batteryCurrentAvg/1000}mA,${GlobalStuff.recordingStarted}"
+                logToFile(this@MainActivity, "battery_log", logEntry)
+                delay(100) // .1 second interval
+            }
+        }
     }
 }
 
@@ -360,3 +505,79 @@ fun AEU(satelliteStatus: SatelliteStatus, modifier: Modifier) {
     flags[2] = if (satelliteStatus.usedInFix) 'U' else ' '
     StatusValue(String(flags), modifier)
 }
+/*
+fun logToFile(context: Context, fileName: String, data: String) {
+    try {
+        val file = File(context.filesDir, fileName)
+        FileWriter(file, true).use { writer ->
+            writer.appendLine(data)
+        }
+    } catch (e: IOException) {
+        e.printStackTrace()
+    }
+}
+*/
+fun logToFile(context: MainActivity, fileName: String, data: String) {
+    val file: File
+
+    try {
+        //val directory = "/storage/emulated/0/"
+        //val storageDir = File(context.getExternalFilesDir(null), "MyAppLogs")
+        //val storageDir = File(directory, "MyAppLogs")
+        val storageDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if(GlobalStuff.recordingTimestamp != "noTimestamp") {
+            file = File(storageDir, fileName + "_" + GlobalStuff.recordingTimestamp + ".txt")
+        }else{
+            file = File(storageDir, fileName + "_" + GlobalStuff.appOpeningTimestamp + ".txt")
+        }
+        //Log.d("Eneko", "Storage directory: ${storageDir.absolutePath}")
+        /*
+        if (!storageDir.exists()) {
+            if (storageDir.mkdirs()) {
+                Log.d("Eneko", "Directory created")
+            } else {
+                Log.e("Eneko", "Failed to create directory")
+                return
+            }
+        }*/
+
+        // Create the directory if it doesn't exist
+        if (!file.parentFile.exists()) {
+            if(file.parentFile.mkdirs()){
+                //Log.d("LOG", "Directory created")
+            }else{
+                //Log.e("LOG", "Failed to create directory")
+            }
+        }else{
+            //Log.e("LOG", "Directory exists")
+        }
+
+        //val file = File(storageDir, fileName)
+        //Log.d("LOG", "File path: ${file.absolutePath}")
+
+        FileWriter(file, true).use { writer ->
+            writer.appendLine(data)
+        }
+    } catch (e: IOException) {
+        e.printStackTrace()
+        //Log.e("LOG", e.toString())
+    }
+}
+
+fun setKeepScreenOn(activity: Activity, keepOn: Boolean) {
+    if (keepOn) {
+        activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    } else {
+        activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+}
+
+data class BatteryData(
+    val timestamp: Long,
+    val batteryLevel: Int,
+    val batteryCurrentNow: Int,
+    val batteryCurrentAvg: Int,
+    val isCharging: Boolean
+)
+
+

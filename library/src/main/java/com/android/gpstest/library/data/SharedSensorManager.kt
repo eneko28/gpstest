@@ -131,6 +131,7 @@ class SharedSensorManager constructor(
                 // Use the modern rotation vector sensors
                 val vectorSensor: Sensor =
                     sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+                        ?: throw IllegalStateException("Rotation vector sensor not available")
                 sensorManager.registerListener(
                     callback,
                     vectorSensor,
@@ -139,6 +140,7 @@ class SharedSensorManager constructor(
             } else if (SatelliteUtils.isOrientationSensorSupported(context)) {
                 // Use the legacy orientation sensors
                 val sensor: Sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ORIENTATION)
+                    ?: throw IllegalStateException("Rotation vector sensor not available")
                 sensorManager.registerListener(
                     callback,
                     sensor,

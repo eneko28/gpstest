@@ -100,7 +100,7 @@ class MapFragment : SupportMapFragment(), View.OnClickListener, LocationSource,
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
-    ): View? {
+    ): View {
         val v = super.onCreateView(inflater, container, savedInstanceState)
 
         lastLocation = null
@@ -340,16 +340,18 @@ class MapFragment : SupportMapFragment(), View.OnClickListener, LocationSource,
             ).toFloat()
             val offset =
                 MapConstants.TARGET_OFFSET_METERS * (clampedTilt / MapConstants.CAMERA_MAX_TILT)
+
+            val nonNullLatLng: LatLng = latLng ?: throw IllegalArgumentException("latLng cannot be null")
             val cameraPosition = CameraPosition.builder().tilt(clampedTilt).bearing(
                 orientation.toFloat()
             )
                 .zoom((MapConstants.CAMERA_ANCHOR_ZOOM + mutableTilt / MapConstants.CAMERA_MAX_TILT).toFloat())
                 .target(
                     if (tiltEnabled) SphericalUtil.computeOffset(
-                        latLng,
+                        nonNullLatLng, //latLng,
                         offset,
                         orientation
-                    ) else latLng
+                    ) else nonNullLatLng //latLng
                 ).build()
             map!!.moveCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
         }
@@ -457,13 +459,17 @@ class MapFragment : SupportMapFragment(), View.OnClickListener, LocationSource,
         }
         val useDarkTheme =
             Application.prefs.getBoolean(getString(R.string.pref_key_dark_theme), false)
-        if (map != null && activity != null && useDarkTheme) {
-            map!!.setMapStyle(
+        val activityInstance = activity
+        val mapInstance = map
+        if (mapInstance != null && activityInstance != null && useDarkTheme) {
+            mapInstance.setMapStyle(
                 MapStyleOptions.loadRawResourceStyle(
-                    activity, R.raw.dark_theme
+                    activityInstance, R.raw.dark_theme
                 )
             )
         }
+
+
     }
 
     /**

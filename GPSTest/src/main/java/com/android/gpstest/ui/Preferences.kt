@@ -191,26 +191,14 @@ class Preferences : PreferenceActivity(), OnSharedPreferenceChangeListener {
         changePreferenceSummary(getString(R.string.pref_key_language))
     }
 
-    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String) {
-        if (key.equals(
+    override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String?) {
+        key?.let {
+            when (it) {
                 getString(R.string.pref_key_preferred_distance_units_v2),
-                ignoreCase = true
-            )
-        ) {
-            // Change the preferred distance units description
-            changePreferenceSummary(key)
-        } else {
-            if (key.equals(
-                    getString(R.string.pref_key_preferred_speed_units_v2),
-                    ignoreCase = true
-                )
-            ) {
-                // Change the preferred speed units description
-                changePreferenceSummary(key)
-            } else {
-                if (key.equals(getString(R.string.pref_key_language), ignoreCase = true)) {
-                    // Change the preferred language description
-                    changePreferenceSummary(key)
+                getString(R.string.pref_key_preferred_speed_units_v2),
+                getString(R.string.pref_key_language) -> {
+                    // Change the corresponding preference description
+                    changePreferenceSummary(it)
                 }
             }
         }
